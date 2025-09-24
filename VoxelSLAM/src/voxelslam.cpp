@@ -1501,6 +1501,7 @@ public:
                 PVecPtr pptr(new PVec);
                 var_init(extrin_para, pl_down, pptr, dept_err, beam_err);
 
+                // ################### STATE ESTIMATE ###################
                 if (lio_state_estimation(pptr)) {
                     if (degrade_cnt > 0) degrade_cnt--;
                 } else
@@ -1519,35 +1520,18 @@ public:
                     imu_pre_buf.push_back(new IMU_PRE(x_buf[win_count - 2].bg, x_buf[win_count - 2].ba));
                     imu_pre_buf[win_count - 2]->push_imu(imus);
                 }
-
+                // ################### KEYFRAME LOAD ###################
                 keyframe_loading(jour);
                 voxhess.clear();
                 voxhess.win_size = win_size;
 
-                // cut_voxel(surf_map, pvec_buf[win_count-1], win_count-1, surf_map_slide, win_size, pwld, sws[0]);
+                // ################### CUT ###################
                 cut_voxel_multi(surf_map, pvec_buf[win_count - 1], win_count - 1, surf_map_slide, win_size, pwld, sws);
                 t2 = ros::Time::now().toSec();
 
+                // ################### RECUT ###################
                 multi_recut(surf_map_slide, win_count, x_buf, voxhess, sws);
                 t3 = ros::Time::now().toSec();
-
-                if (degrade_cnt > degrade_bound) {
-                    degrade_cnt = 0;
-                    system_reset(imus);
-
-                    last_pos = x_curr.p;
-                    jour = 0;
-
-                    mtx_loop.lock();
-                    buf_lba2loop_tem.swap(buf_lba2loop);
-                    mtx_loop.unlock();
-                    reset_flag = 1;
-
-                    motion_init_flag = 1;
-                    history_kfsize = 0;
-
-                    continue;
-                }
             }
 
             if (win_count >= win_size) {
@@ -1562,6 +1546,7 @@ public:
                     g_update = 0;
                     x_curr.g = x_buf[win_count - 1].g;
                 } else {
+                    // ################### LOCAL MAPPING ###################
                     LI_BA_Optimizer opt_lsv;
                     opt_lsv.damping_iter(x_buf, voxhess, imu_pre_buf, &hess);
                 }
@@ -1573,8 +1558,13 @@ public:
                 buf_lba2loop.push_back(bl);
                 mtx_loop.unlock();
 
+                // get the result from local mapping
                 x_curr.R = x_buf[win_count - 1].R;
                 x_curr.p = x_buf[win_count - 1].p;
+                static std::ofstream ofs("/tmp/hello_voxelslam.txt");
+                Eigen::Quaterniond q(x_curr.R);
+                ofs << std::fixed;
+                ofs << x_curr.t << " " << x_curr.p.x() << " " << x_curr.p.y() << " " << x_curr.p.z() << " " << q.x() << " " << q.y() << " " << q.z() << " " << q.w() << std::endl;
                 t5 = ros::Time::now().toSec();
 
                 ResultOutput::instance().pub_localmap(mgsize, sessionNames.size() - 1, pvec_buf, x_buf, pcl_path,
@@ -1619,7 +1609,7 @@ public:
 
                 win_base += mgsize;
                 win_count -= mgsize;
-            }
+            } // win size
 
             double t_end = ros::Time::now().toSec();
             double mem = get_memory();
