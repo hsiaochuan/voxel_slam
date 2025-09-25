@@ -961,17 +961,11 @@ public:
     // ins = 255.0*rand()/(RAND_MAX + 1.0f);
   }
 
-  inline void push(int ord, const pointVar &pv, const Eigen::Vector3d &pw,
-                   vector<SlideWindow *> &sws) {
+  inline void push(int ord, const pointVar &pv, const Eigen::Vector3d &pw) {
     mVox.lock();
-    if (sw == nullptr) {
-      if (sws.size() != 0) {
-        sw = sws.back();
-        sws.pop_back();
-        sw->resize(wdsize);
-      } else
-        sw = new SlideWindow(wdsize);
-    }
+    if (sw == nullptr)
+      sw = new SlideWindow(wdsize);
+
     if (!isexist)
       isexist = true;
 
@@ -1009,10 +1003,9 @@ public:
             (eig_values[0] / eig_values[2]) < plane_eigen_value_thre[layer]);
   }
 
-  void allocate(int ord, const pointVar &pv, const Eigen::Vector3d &pw,
-                vector<SlideWindow *> &sws) {
+  void allocate(int ord, const pointVar &pv, const Eigen::Vector3d &pw) {
     if (octo_state == 0) {
-      push(ord, pv, pw, sws);
+      push(ord, pv, pw);
     } else {
       int xyz[3] = {0, 0, 0};
       for (int k = 0; k < 3; k++)
@@ -1031,7 +1024,7 @@ public:
         leaves[leafnum]->quater_length = quater_length / 2;
       }
 
-      leaves[leafnum]->allocate(ord, pv, pw, sws);
+      leaves[leafnum]->allocate(ord, pv, pw);
     }
   }
 
@@ -1060,7 +1053,7 @@ public:
     }
   }
 
-  void fix_divide(vector<SlideWindow *> &sws) {
+  void fix_divide() {
     for (pointVar &pv : point_fix) {
       int xyz[3] = {0, 0, 0};
       for (int k = 0; k < 3; k++)
@@ -1082,7 +1075,7 @@ public:
     }
   }
 
-  void subdivide(int si, IMUST &xx, vector<SlideWindow *> &sws) {
+  void subdivide(int si, IMUST &xx) {
     for (pointVar &pv : sw->points[mp[si]]) {
       Eigen::Vector3d pw = xx.R * pv.pnt + xx.p;
       int xyz[3] = {0, 0, 0};
@@ -1101,7 +1094,7 @@ public:
         leaves[leafnum]->quater_length = quater_length / 2;
       }
 
-      leaves[leafnum]->push(si, pv, pw, sws);
+      leaves[leafnum]->push(si, pv, pw);
     }
   }
 
@@ -1136,7 +1129,7 @@ public:
     plane.radius = eig_value[2];
   }
 
-  void recut(int win_count, vector<IMUST> &x_buf, vector<SlideWindow *> &sws) {
+  void recut(int win_count, vector<IMUST> &x_buf) {
     if (octo_state == 0) {
       if (layer >= 0) {
         opt_state = -1;
@@ -1159,23 +1152,22 @@ public:
       }
 
       if (pcr_fix.N != 0) {
-        fix_divide(sws);
+        fix_divide();
         // point_fix.clear();
         PVec().swap(point_fix);
       }
 
       for (int i = 0; i < win_count; i++)
-        subdivide(i, x_buf[i], sws);
+        subdivide(i, x_buf[i]);
 
       sw->clear();
-      sws.push_back(sw);
       sw = nullptr;
       octo_state = 1;
     }
 
     for (int i = 0; i < 8; i++)
       if (leaves[i] != nullptr)
-        leaves[i]->recut(win_count, x_buf, sws);
+        leaves[i]->recut(win_count, x_buf);
   }
 
   void margi(int win_count, int mgsize, vector<IMUST> &x_buf,
@@ -1424,17 +1416,16 @@ public:
             wld[2] >= voxel_center[2] - hl && wld[2] <= voxel_center[2] + hl);
   }
 
-  void clear_slwd(vector<SlideWindow *> &sws) {
+  void clear_slwd() {
     if (octo_state != 0) {
       for (int i = 0; i < 8; i++)
         if (leaves[i] != nullptr) {
-          leaves[i]->clear_slwd(sws);
+          leaves[i]->clear_slwd();
         }
     }
 
     if (sw != nullptr) {
       sw->clear();
-      sws.push_back(sw);
       sw = nullptr;
     }
   }
@@ -1443,7 +1434,7 @@ public:
 void cut_voxel(unordered_map<VOXEL_LOC, OctoTree *> &feat_map, PVecPtr pvec,
                int win_count,
                unordered_map<VOXEL_LOC, OctoTree *> &feat_tem_map, int wdsize,
-               PLV(3) & pwld, vector<SlideWindow *> &sws) {
+               PLV(3) & pwld) {
   int plsize = pvec->size();
   for (int i = 0; i < plsize; i++) {
     pointVar &pv = (*pvec)[i];
@@ -1458,13 +1449,13 @@ void cut_voxel(unordered_map<VOXEL_LOC, OctoTree *> &feat_map, PVecPtr pvec,
     VOXEL_LOC position(loc[0], loc[1], loc[2]);
     auto iter = feat_map.find(position);
     if (iter != feat_map.end()) {
-      iter->second->allocate(win_count, pv, pw, sws);
+      iter->second->allocate(win_count, pv, pw);
       iter->second->isexist = true;
       if (feat_tem_map.find(position) == feat_map.end())
         feat_tem_map[position] = iter->second;
     } else {
       OctoTree *ot = new OctoTree(0, wdsize);
-      ot->allocate(win_count, pv, pw, sws);
+      ot->allocate(win_count, pv, pw);
       ot->voxel_center[0] = (0.5 + position.x) * voxel_size;
       ot->voxel_center[1] = (0.5 + position.y) * voxel_size;
       ot->voxel_center[2] = (0.5 + position.z) * voxel_size;
@@ -1479,8 +1470,7 @@ void cut_voxel(unordered_map<VOXEL_LOC, OctoTree *> &feat_map, PVecPtr pvec,
 void cut_voxel_multi(unordered_map<VOXEL_LOC, OctoTree *> &feat_map,
                      PVecPtr pvec, int win_count,
                      unordered_map<VOXEL_LOC, OctoTree *> &feat_tem_map,
-                     int wdsize, PLV(3) & pwld,
-                     vector<vector<SlideWindow *>> &sws) {
+                     int wdsize, PLV(3) & pwld) {
   unordered_map<OctoTree *, vector<int>> map_pvec;
   int plsize = pvec->size();
   for (int i = 0; i < plsize; i++) {
@@ -1512,6 +1502,7 @@ void cut_voxel_multi(unordered_map<VOXEL_LOC, OctoTree *> &feat_map,
       feat_tem_map[position] = ot;
     }
 
+    // the points belong to which voxel
     map_pvec[ot].push_back(i);
   }
 
@@ -1528,35 +1519,29 @@ void cut_voxel_multi(unordered_map<VOXEL_LOC, OctoTree *> &feat_map,
   for (auto iter = map_pvec.begin(); iter != map_pvec.end(); iter++)
     octs.push_back(&(*iter));
 
-  int thd_num = sws.size();
+  int thd_num = 8;
   int g_size = octs.size();
   if (g_size < thd_num)
     return;
   vector<thread *> mthreads(thd_num);
   double part = 1.0 * g_size / thd_num;
 
-  int swsize = sws[0].size() / thd_num;
-  for (int i = 1; i < thd_num; i++) {
-    sws[i].insert(sws[i].end(), sws[0].end() - swsize, sws[0].end());
-    sws[0].erase(sws[0].end() - swsize, sws[0].end());
-  }
-
   for (int i = 1; i < thd_num; i++) {
     mthreads[i] = new thread(
-        [&](int head, int tail, vector<SlideWindow *> &sw) {
+        [&](int head, int tail) {
           for (int j = head; j < tail; j++) {
             for (int k : octs[j]->second)
-              octs[j]->first->allocate(win_count, (*pvec)[k], pwld[k], sw);
+              octs[j]->first->allocate(win_count, (*pvec)[k], pwld[k]);
           }
         },
-        part * i, part * (i + 1), ref(sws[i]));
+        part * i, part * (i + 1));
   }
 
   for (int i = 0; i < thd_num; i++) {
     if (i == 0) {
       for (int j = 0; j < int(part); j++)
         for (int k : octs[j]->second)
-          octs[j]->first->allocate(win_count, (*pvec)[k], pwld[k], sws[0]);
+          octs[j]->first->allocate(win_count, (*pvec)[k], pwld[k]);
     } else {
       mthreads[i]->join();
       delete mthreads[i];

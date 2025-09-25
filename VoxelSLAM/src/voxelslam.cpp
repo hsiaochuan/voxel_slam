@@ -556,8 +556,7 @@ public:
                   LidarFactor &voxhess, vector<IMUST> &x_buf,
                   unordered_map<VOXEL_LOC, OctoTree *> &surf_map,
                   unordered_map<VOXEL_LOC, OctoTree *> &surf_map_slide,
-                  vector<PVecPtr> &pvec_buf, int win_size,
-                  vector<vector<SlideWindow *>> &sws, IMUST &x_curr,
+                  vector<PVecPtr> &pvec_buf, int win_size, IMUST &x_curr,
                   deque<IMU_PRE *> &imu_pre_buf, IMUST &extrin_para) {
     PLV(3) pwld;
     double last_g_norm = x_buf[0].g.norm();
@@ -585,7 +584,7 @@ public:
       vector<OctoTree *> octos;
       for (auto iter = surf_map.begin(); iter != surf_map.end(); ++iter) {
         iter->second->tras_ptr(octos);
-        iter->second->clear_slwd(sws[0]);
+        iter->second->clear_slwd();
         delete iter->second;
       }
       for (int i = 0; i < octos.size(); i++)
@@ -610,15 +609,14 @@ public:
             pwld.push_back(x_buf[i].R * pv.pnt + x_buf[i].p);
         }
 
-        cut_voxel(surf_map, pvec_buf[i], i, surf_map_slide, win_size, pwld,
-                  sws[0]);
+        cut_voxel(surf_map, pvec_buf[i], i, surf_map_slide, win_size, pwld);
       }
 
       // LidarFactor voxhess(win_size);
       voxhess.clear();
       voxhess.win_size = win_size;
       for (auto iter = surf_map.begin(); iter != surf_map.end(); ++iter) {
-        iter->second->recut(win_size, x_buf, sws[0]);
+        iter->second->recut(win_size, x_buf);
         iter->second->tras_opt(voxhess);
       }
 
@@ -672,7 +670,7 @@ public:
       vector<OctoTree *> octos;
       for (auto iter = surf_map.begin(); iter != surf_map.end(); ++iter) {
         iter->second->tras_ptr(octos);
-        iter->second->clear_slwd(sws[0]);
+        iter->second->clear_slwd();
         delete iter->second;
       }
       for (int i = 0; i < octos.size(); i++)
@@ -727,7 +725,6 @@ public:
   vector<PVecPtr> pvec_buf;
   deque<IMU_PRE *> imu_pre_buf;
   int win_count = 0, win_base = 0;
-  vector<vector<SlideWindow *>> sws;
 
   vector<ScanPose *> *scanPoses;
   mutex mtx_loop;
@@ -846,7 +843,6 @@ public:
       exit(0);
     }
 
-    sws.resize(thread_num);
     cout << "bagname: " << bagname << endl;
   }
 
@@ -1191,7 +1187,7 @@ public:
     if (win_count >= win_size) {
       is_success = Initialization::instance().motion_init(
           pl_origs, vec_imus, beg_times, &hess, voxhess, x_buf, surf_map,
-          surf_map_slide, pvec_buf, win_size, sws, x_curr, imu_pre_buf,
+          surf_map_slide, pvec_buf, win_size, x_curr, imu_pre_buf,
           extrin_para);
 
       if (is_success == 0)
@@ -1204,7 +1200,7 @@ public:
   void system_reset(deque<sensor_msgs::Imu::Ptr> &imus) {
     for (auto iter = surf_map.begin(); iter != surf_map.end(); iter++) {
       iter->second->tras_ptr(octos_release);
-      iter->second->clear_slwd(sws[0]);
+      iter->second->clear_slwd();
       delete iter->second;
     }
     surf_map.clear();
@@ -1236,8 +1232,7 @@ public:
   // After local BA, update the map and marginalize the points of oldest scan
   // multi means multiple thread
   void multi_margi(unordered_map<VOXEL_LOC, OctoTree *> &feat_map, double jour,
-                   int win_count, vector<IMUST> &xs, LidarFactor &voxopt,
-                   vector<SlideWindow *> &sw) {
+                   int win_count, vector<IMUST> &xs, LidarFactor &voxopt) {
     // for(auto iter=feat_map.begin(); iter!=feat_map.end();)
     // {
     //   iter->second->jour = jour;
@@ -1294,7 +1289,7 @@ public:
       if (iter->second->isexist)
         iter++;
       else {
-        iter->second->clear_slwd(sw);
+        iter->second->clear_slwd();
         feat_map.erase(iter++);
       }
     }
@@ -1305,8 +1300,7 @@ public:
 
   // Determine the plane and recut the voxel map in octo-tree
   void multi_recut(unordered_map<VOXEL_LOC, OctoTree *> &feat_map,
-                   int win_count, vector<IMUST> &xs, LidarFactor &voxopt,
-                   vector<vector<SlideWindow *>> &sws) {
+                   int win_count, vector<IMUST> &xs, LidarFactor &voxopt) {
     // for(auto iter=feat_map.begin(); iter!=feat_map.end(); iter++)
     // {
     //   iter->second->recut(win_count, xs, sws[0]);
@@ -1328,28 +1322,23 @@ public:
     }
 
     auto recut_func = [](int win_count, vector<OctoTree *> &oct,
-                         vector<IMUST> xxs, vector<SlideWindow *> &sw) {
+                         vector<IMUST> xxs) {
       for (OctoTree *oc : oct)
-        oc->recut(win_count, xxs, sw);
+        oc->recut(win_count, xxs);
     };
 
     for (int i = 1; i < thd_num; i++) {
       mthreads[i] =
-          new thread(recut_func, win_count, ref(octss[i]), xs, ref(sws[i]));
+          new thread(recut_func, win_count, ref(octss[i]), xs);
     }
 
     for (int i = 0; i < thd_num; i++) {
       if (i == 0) {
-        recut_func(win_count, octss[i], xs, sws[i]);
+        recut_func(win_count, octss[i], xs);
       } else {
         mthreads[i]->join();
         delete mthreads[i];
       }
-    }
-
-    for (int i = 1; i < sws.size(); i++) {
-      sws[0].insert(sws[0].end(), sws[i].begin(), sws[i].end());
-      sws[i].clear();
     }
 
     for (auto iter = feat_map.begin(); iter != feat_map.end(); iter++)
@@ -1412,12 +1401,6 @@ public:
             delete octos[i];
           octos.clear();
           malloc_trim(0);
-        } else if (sws[0].size() > 10000) {
-          for (int i = 0; i < 500; i++) {
-            delete sws[0].back();
-            sws[0].pop_back();
-          }
-          malloc_trim(0);
         }
 
         sleep(0.001);
@@ -1478,14 +1461,15 @@ public:
           imu_pre_buf[win_count - 2]->push_imu(imus);
         }
         // ################### CUT ###################
+        // surf_map_slide is current active
         cut_voxel_multi(surf_map, pvec_buf[win_count - 1], win_count - 1,
-                        surf_map_slide, win_size, pwld, sws);
+                        surf_map_slide, win_size, pwld);
         t2 = ros::Time::now().toSec();
 
         // ################### RECUT ###################
         voxhess.clear();
         voxhess.win_size = win_size;
-        multi_recut(surf_map_slide, win_count, x_buf, voxhess, sws);
+        multi_recut(surf_map_slide, win_count, x_buf, voxhess);
         t3 = ros::Time::now().toSec();
       }
 
@@ -1521,7 +1505,7 @@ public:
                                               pvec_buf, x_buf, pcl_path,
                                               win_base, win_count);
         // ################### MARGIN ###################
-        multi_margi(surf_map_slide, jour, win_count, x_buf, voxhess, sws[0]);
+        multi_margi(surf_map_slide, jour, win_count, x_buf, voxhess);
         t6 = ros::Time::now().toSec();
 
         if ((win_base + win_count) % 10 == 0) {
@@ -1579,7 +1563,7 @@ public:
     vector<OctoTree *> octos;
     for (auto iter = surf_map.begin(); iter != surf_map.end(); iter++) {
       iter->second->tras_ptr(octos);
-      iter->second->clear_slwd(sws[0]);
+      iter->second->clear_slwd();
       delete iter->second;
     }
 
@@ -1587,9 +1571,7 @@ public:
       delete octos[i];
     octos.clear();
 
-    for (int i = 0; i < sws[0].size(); i++)
-      delete sws[0][i];
-    sws[0].clear();
+
     malloc_trim(0);
   }
 
