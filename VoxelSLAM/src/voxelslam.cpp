@@ -1187,8 +1187,7 @@ public:
     if (win_count >= win_size) {
       is_success = Initialization::instance().motion_init(
           pl_origs, vec_imus, beg_times, &hess, voxhess, x_buf, surf_map,
-          surf_map_slide, pvec_buf, win_size, x_curr, imu_pre_buf,
-          extrin_para);
+          surf_map_slide, pvec_buf, win_size, x_curr, imu_pre_buf, extrin_para);
 
       if (is_success == 0)
         return -1;
@@ -1307,29 +1306,28 @@ public:
     //   iter->second->tras_opt(voxopt);
     // }
 
+    // all the recut task in every thread
     int thd_num = thread_num;
     vector<vector<OctoTree *>> octss(thd_num);
-    int g_size = feat_map.size();
-    if (g_size < thd_num)
-      return;
-    vector<thread *> mthreads(thd_num);
-    double part = 1.0 * g_size / thd_num;
-    int cnt = 0;
-    for (auto iter = feat_map.begin(); iter != feat_map.end(); iter++) {
-      octss[cnt].push_back(iter->second);
-      if (octss[cnt].size() >= part && cnt < thd_num - 1)
-        cnt++;
+
+    // allocate the recut oct to thread
+    double part = feat_map.size() / thd_num;
+    int thread_it = 0;
+    for (auto oct = feat_map.begin(); oct != feat_map.end(); oct++) {
+      octss[thread_it].push_back(oct->second);
+      if (octss[thread_it].size() >= part && thread_it < thd_num - 1)
+        thread_it++;
     }
 
-    auto recut_func = [](int win_count, vector<OctoTree *> &oct,
+    // do recut
+    auto recut_func = [](int win_count, vector<OctoTree *> &octs,
                          vector<IMUST> xxs) {
-      for (OctoTree *oc : oct)
+      for (OctoTree *oc : octs)
         oc->recut(win_count, xxs);
     };
-
+    vector<thread *> mthreads(thd_num);
     for (int i = 1; i < thd_num; i++) {
-      mthreads[i] =
-          new thread(recut_func, win_count, ref(octss[i]), xs);
+      mthreads[i] = new thread(recut_func, win_count, ref(octss[i]), xs);
     }
 
     for (int i = 0; i < thd_num; i++) {
@@ -1341,6 +1339,7 @@ public:
       }
     }
 
+    // dot tran
     for (auto iter = feat_map.begin(); iter != feat_map.end(); iter++)
       iter->second->tras_opt(voxopt);
   }
@@ -1571,10 +1570,8 @@ public:
       delete octos[i];
     octos.clear();
 
-
     malloc_trim(0);
   }
-
 };
 
 int main(int argc, char **argv) {
