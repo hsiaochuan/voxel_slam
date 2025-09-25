@@ -1093,45 +1093,7 @@ public:
     double tt2 = ros::Time::now().toSec();
   }
 
-  // load the previous keyframe in the local voxel map
-  void keyframe_loading(double jour) {
-    if (history_kfsize <= 0)
-      return;
-    double tt1 = ros::Time::now().toSec();
-    PointType ap_curr;
-    ap_curr.x = x_curr.p[0];
-    ap_curr.y = x_curr.p[1];
-    ap_curr.z = x_curr.p[2];
-    vector<int> vec_idx;
-    vector<float> vec_dis;
-    kd_keyframes.radiusSearch(ap_curr, 10, vec_idx, vec_dis);
 
-    for (int id : vec_idx) {
-      int ord_kf = pl_kdmap->points[id].curvature;
-      if (keyframes->at(id)->exist) {
-        Keyframe &kf = *(keyframes->at(id));
-        IMUST &xx = kf.x0;
-        PVec pvec;
-        pvec.reserve(kf.plptr->size());
-
-        pointVar pv;
-        pv.var.setZero();
-        int plsize = kf.plptr->size();
-        // for(int j=0; j<plsize; j+=2)
-        for (int j = 0; j < plsize; j++) {
-          PointType ap = kf.plptr->points[j];
-          pv.pnt << ap.x, ap.y, ap.z;
-          pv.pnt = xx.R * pv.pnt + xx.p;
-          pvec.push_back(pv);
-        }
-
-        cut_voxel(surf_map, pvec, win_size, jour);
-        kf.exist = 0;
-        history_kfsize--;
-        break;
-      }
-    }
-  }
 
   int initialization(deque<sensor_msgs::Imu::Ptr> &imus, Eigen::MatrixXd &hess,
                      LidarFactor &voxhess, PLV(3) & pwld,

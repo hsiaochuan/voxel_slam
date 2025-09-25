@@ -1471,7 +1471,7 @@ void cut_voxel_multi(unordered_map<VOXEL_LOC, OctoTree *> &feat_map,
                      PVecPtr pvec, int win_count,
                      unordered_map<VOXEL_LOC, OctoTree *> &feat_tem_map,
                      int wdsize, PLV(3) & pwld) {
-  unordered_map<OctoTree *, vector<int>> map_pvec;
+  unordered_map<OctoTree *, vector<int>> oct_point_ids_map;
   int plsize = pvec->size();
   for (int i = 0; i < plsize; i++) {
     pointVar &pv = (*pvec)[i];
@@ -1503,10 +1503,10 @@ void cut_voxel_multi(unordered_map<VOXEL_LOC, OctoTree *> &feat_map,
     }
 
     // the points belong to which voxel
-    map_pvec[ot].push_back(i);
+    oct_point_ids_map[ot].push_back(i);
   }
 
-  // for(auto iter=map_pvec.begin(); iter!=map_pvec.end(); iter++)
+  // for(auto iter=oct_point_ids_map.begin(); iter!=oct_point_ids_map.end(); iter++)
   // {
   //   for(int i: iter->second)
   //   {
@@ -1514,24 +1514,21 @@ void cut_voxel_multi(unordered_map<VOXEL_LOC, OctoTree *> &feat_map,
   //   }
   // }
 
-  vector<pair<OctoTree *const, vector<int>> *> octs;
-  octs.reserve(map_pvec.size());
-  for (auto iter = map_pvec.begin(); iter != map_pvec.end(); iter++)
-    octs.push_back(&(*iter));
+  vector<pair<OctoTree *const, vector<int>> *> oct_point_ids;
+  oct_point_ids.reserve(oct_point_ids_map.size());
+  for (auto iter = oct_point_ids_map.begin(); iter != oct_point_ids_map.end(); iter++)
+    oct_point_ids.push_back(&(*iter));
 
   int thd_num = 8;
-  int g_size = octs.size();
-  if (g_size < thd_num)
-    return;
   vector<thread *> mthreads(thd_num);
-  double part = 1.0 * g_size / thd_num;
+  double part = oct_point_ids.size() / thd_num;
 
   for (int i = 1; i < thd_num; i++) {
     mthreads[i] = new thread(
         [&](int head, int tail) {
           for (int j = head; j < tail; j++) {
-            for (int k : octs[j]->second)
-              octs[j]->first->allocate(win_count, (*pvec)[k], pwld[k]);
+            for (int k : oct_point_ids[j]->second)
+              oct_point_ids[j]->first->allocate(win_count, (*pvec)[k], pwld[k]);
           }
         },
         part * i, part * (i + 1));
@@ -1540,8 +1537,8 @@ void cut_voxel_multi(unordered_map<VOXEL_LOC, OctoTree *> &feat_map,
   for (int i = 0; i < thd_num; i++) {
     if (i == 0) {
       for (int j = 0; j < int(part); j++)
-        for (int k : octs[j]->second)
-          octs[j]->first->allocate(win_count, (*pvec)[k], pwld[k]);
+        for (int k : oct_point_ids[j]->second)
+          oct_point_ids[j]->first->allocate(win_count, (*pvec)[k], pwld[k]);
     } else {
       mthreads[i]->join();
       delete mthreads[i];
@@ -1549,32 +1546,6 @@ void cut_voxel_multi(unordered_map<VOXEL_LOC, OctoTree *> &feat_map,
   }
 }
 
-void cut_voxel(unordered_map<VOXEL_LOC, OctoTree *> &feat_map, PVec &pvec,
-               int wdsize, double jour) {
-  for (pointVar &pv : pvec) {
-    float loc[3];
-    for (int j = 0; j < 3; j++) {
-      loc[j] = pv.pnt[j] / voxel_size;
-      if (loc[j] < 0)
-        loc[j] -= 1;
-    }
-
-    VOXEL_LOC position(loc[0], loc[1], loc[2]);
-    auto iter = feat_map.find(position);
-    if (iter != feat_map.end()) {
-      iter->second->allocate_fix(pv);
-    } else {
-      OctoTree *ot = new OctoTree(0, wdsize);
-      ot->push_fix_novar(pv);
-      ot->voxel_center[0] = (0.5 + position.x) * voxel_size;
-      ot->voxel_center[1] = (0.5 + position.y) * voxel_size;
-      ot->voxel_center[2] = (0.5 + position.z) * voxel_size;
-      ot->quater_length = voxel_size / 4.0;
-      ot->jour = jour;
-      feat_map[position] = ot;
-    }
-  }
-}
 
 // Match the point with the plane in the voxel map
 int match(unordered_map<VOXEL_LOC, OctoTree *> &feat_map, Eigen::Vector3d &wld,
